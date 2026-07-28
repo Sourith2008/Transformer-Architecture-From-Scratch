@@ -32,13 +32,13 @@ class MultiHeadAttention(torch.nn.Module):
     self.head_dim=d_model//num_heads
     self.qkv_layer=nn.Linear(d_model,3*d_model)
     self.linear=nn.Linear(d_model,d_model)
-  def forward(self,x):
+  def forward(self,x,mask):
     batch_size,seq_len,d_model=x.size()
-    qkv=qkv_layer(x)
-    qkv==qkv.reshape(batch_size,seq_len,num_heads,3*self.head_dim)
+    qkv=self.qkv_layer(x)
+    qkv=qkv.reshape(batch_size,seq_len,self.num_heads,3*self.head_dim)
     qkv=qkv.permute(0,2,1,3)
     q,k,v=qkv.chunk(3,dim=-1)
-    attention,values=scaled_dot_product(q,k,v)
+    attention,values=scaled_dot_product(q,k,v,mask)
     values=values.permute(0,2,1,3).reshape(batch_size,seq_len,self.num_heads*self.head_dim)
     out=self.linear(values)
     return out
@@ -66,11 +66,12 @@ class Positional_Encoding(nn.Module):
 
 class LayerNormalization(nn.Module):
   def __init__(self,param_shape,eps=1e-5):
+    super().__init__()
     self.param_shape=param_shape
     self.eps=eps
     self.gamma=nn.Parameter(torch.ones(param_shape))
     self.beta=nn.Parameter(torch.zeros(param_shape))
-  def forwars(self,inputs):
+  def forward(self,inputs):
     dims=[-(i+1) for i in range(len(self.param_shape))]
     mean=inputs.mean(dim=dims,keepdim=True)
     var=((inputs-mean)**2).mean(dim=dims,keepdim=True)
@@ -84,6 +85,7 @@ print("LayerNormalization defined successfully!")
 
 class FeedForward(nn.Module):
   def __init__(self,d_model,ffn_hidden):
+    super().__init__()
     self.d_model=d_model
     self.ffn_hidden=ffn_hidden
     self.linear1=nn.Linear(d_model,ffn_hidden)
@@ -108,16 +110,16 @@ class MultiHeadCrossAttention(nn.Module):
     self.q_layer=nn.Linear(d_model,d_model)
     self.kv_layer=nn.Linear(d_model,d_model*2)
     self.linear=nn.Linear(d_model,d_model)
-  def forward(self,x,y):
+  def forward(self,x,y,mask):
     batch_size,seq_len,d_model=x.size()
     q=self.q_layer(y)
     kv=self.kv_layer(x)
-    kv=kv.resahpe(batch_size,seq_len,self.num_heads,2*self.head_dim)
+    kv=kv.reshape(batch_size,seq_len,self.num_heads,2*self.head_dim)
     q=q.reshape(batch_size,seq_len,self.num_heads,self.head_dim)
     q=q.permute(0,2,1,3)
     kv=kv.permute(0,2,1,3)
     k,v=kv.chunk(2,dim=-1)
-    attention,value=scaled_dot_product(q,k,v)
+    attention,value=scaled_dot_product(q,k,v,mask)
     value=value.permute(0,2,1,3).reshape(batch_size,seq_len,d_model)
     out=self.linear(value)
     return out
@@ -153,7 +155,7 @@ class SentenceEmbedding(nn.Module):
     tokenized=torch.stack(tokenized)
     return tokenized.to(device)
   def forward(self,x,start_token,end_token):
-    x=batch_tokenize(x,start_token,end_token)
+    x=self.batch_tokenize(x,start_token,end_token)
     x=self.embedding(x)
     pos=self.pe().to(device)
     x=x+pos
@@ -165,12 +167,12 @@ print("Senetence Embedding defined successfully!")
 
 class EncoderLayer(nn.Module):
   def __init__(self,d_model,ffn_hidden,num_heads,drop_prob=0.1):
-    super(EncoderLLayer,self).__init__()
+    super(EncoderLayer,self).__init__()
     self.d_model=d_model
     self.ffn_hidden=ffn_hidden
     self.drop_prob=drop_prob
     self.num_heads=num_heads
-    self.attention=MultiHeadAttention(num_heads=num_heads,d_model=d_model)
+    self.attention=MultiHeadAttention(num_heads=num_heads,d_model=d_model,max_len=max_len)
     self.layer_norm1=LayerNormalization(param_shape=[d_model])
     self.layer_norm2=LayerNormalization(param_shape=[d_model])
     self.dropout=nn.Dropout(p=drop_prob)
@@ -207,7 +209,7 @@ class Encoder(nn.Module):
     self.END_TOKEN=END_TOKEN
     self.PADDING_TOKEN=PADDING_TOKEN
     self.sentence_embedding=SentenceEmbedding(d_model=d_model,max_len=max_len,language_to_index=language_to_index,START_TOKEN=START_TOKEN,END_TOKEN=END_TOKEN,PADDING_TOKEN=PADDING_TOKEN)
-    self.layers=SequentialEncoder(*[EncoderLayer(d_model=d_model,ffn_hidden=ffn_hidden,num_heads=num_heads,drop_prob=drop_prob) for _ in range(num_layers)])
+    self.layers=SequentialEncoder(*[EncoderLayer(d_model=d_model,ffn_hidden=ffn_hidden,num_heads=num_heads) for _ in range(num_layers)])
   def forward(self,x,self_attention_mask):
     x=self.sentence_embedding(x)
     x=self.layers(x)
@@ -231,9 +233,9 @@ class DecoderLayer(nn.Module):
     self.norm2=LayerNormalization(param_shape=[d_model])
     self.norm3=LayerNormalization(param_shape=[d_model])
     self.ffn=FeedForward(d_model=d_model,ffn_hidden=ffn_hidden)
-  def Forward(self,x,y):
+  def forward(self,x,y,self_attention_mask,cross_attention_mask):
     _y=y
-    y=self.attention(y,self_attention_mask,cross_attention_mask)
+    y=self.attention(y,self_attention_mask)
     y=self.dropout1(y)
     y=self.norm1(y+_y)
     _y=y
