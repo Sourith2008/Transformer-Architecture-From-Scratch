@@ -141,7 +141,3 @@ Contributions and fixes are welcome via pull requests.
 - Vaswani et al., *["Attention Is All You Need"](https://arxiv.org/abs/1706.03762)* (2017)
 
 ---
-
-## 📄 License
-
-This project is open-sourced for educational purposes. Add a license of your choice (e.g. MIT) if distributing publicly.
