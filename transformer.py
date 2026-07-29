@@ -271,12 +271,30 @@ print("Decoder defined successfully!")
 """THE TRANSFORMER CLASS"""
 
 class Transformer(nn.Module):
-  def __init__(self,d_model,max_len,num_heads,ffn_hidden,num_layers,bn_vocab_size,bengali_to_index,english_to_index,START_TOKEN,END_TOKEN,PADDING_TOKEN):
+  def __init__(self,
+  d_model,
+  max_len,
+  num_heads,
+  ffn_hidden,
+  num_layers,
+  bn_vocab_size,
+  bengali_to_index,
+  english_to_index,
+  START_TOKEN,
+  END_TOKEN,
+  PADDING_TOKEN):
     super().__init__()
     self.encoder=Encoder(d_model,max_len,english_to_index,ffn_hidden,num_heads,num_layers,START_TOKEN,END_TOKEN,PADDING_TOKEN)
     self.decoder=Decoder(d_model,max_len,ffn_hidden,num_heads,num_layers,bengali_to_index,START_TOKEN,END_TOKEN,PADDING_TOKEN)
     self.linear=nn.Linear(d_model,bn_vocab_size)
-  def forward(self,x,y,encoder_self_attention_mask=None,decoder_self_attention_mask=None,decoder_cross_attention_mask=None,start_token=True,end_token=True):
+  def forward(self,x,y,
+  encoder_self_attention_mask=None,
+  decoder_self_attention_mask=None,
+  decoder_cross_attention_mask=None,
+  enc_start_token=True,
+  enc_end_token=True,
+  dec_start_token=False,
+  dec_end_token=False):
     x=self.encoder(x,encoder_self_attention_mask,start_token,end_token)
     y=self.decoder(x,y,decoder_self_attention_mask,decoder_cross_attention_mask,start_token,end_token)
     y=self.linear(y)
