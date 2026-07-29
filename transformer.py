@@ -53,7 +53,7 @@ class Positional_Encoding(nn.Module):
         self.max_len=max_len
     def forward(self):
         i=torch.arange(0,self.d_model,2)
-        pos=torch.arange(self.max_len)
+        pos=torch.arange(self.max_len).reshape(self.max_len,1)
         denom=10000**(i/self.d_model)
         sin=torch.sin(pos/denom)
         cos=torch.cos(pos/denom)
@@ -90,14 +90,14 @@ class FeedForward(nn.Module):
     self.ffn_hidden=ffn_hidden
     self.linear1=nn.Linear(d_model,ffn_hidden)
     self.linear2=nn.Linear(ffn_hidden,d_model)
-    self.dropout1=nn.Dropout(p=0.1)
-    self.dropout2=nn.Dropout(p=0.1)
+    self.dropout=nn.Dropout(p=0.1)
   def forward(self,x):
     x=self.linear1(x)
     x=F.relu(x)
-    x=self.dropout1(x)
+    x=self.dropout(x)
     x=self.linear2(x)
-  print("Feed Forward Network defined successfully!")
+    return x
+print("Feed Forward Network defined successfully!")
 
 """Multi Head Cross Attention"""
 
@@ -132,7 +132,7 @@ class SentenceEmbedding(nn.Module):
     super().__init__()
     self.d_model=d_model
     self.max_len=max_len
-    self.embedding=nn.Embedding(max_len,d_model)
+    self.embedding=nn.Embedding(len(language_to_index),d_model)
     self.pe=Positional_Encoding(d_model=d_model,max_len=max_len)
     self.language_to_index=language_to_index
     self.START_TOKEN=START_TOKEN
@@ -166,7 +166,7 @@ print("Senetence Embedding defined successfully!")
 """ENCODER"""
 
 class EncoderLayer(nn.Module):
-  def __init__(self,d_model,ffn_hidden,num_heads,drop_prob=0.1):
+  def __init__(self,d_model,ffn_hidden,max_len,num_heads,drop_prob=0.1):
     super(EncoderLayer,self).__init__()
     self.d_model=d_model
     self.ffn_hidden=ffn_hidden
@@ -177,9 +177,9 @@ class EncoderLayer(nn.Module):
     self.layer_norm2=LayerNormalization(param_shape=[d_model])
     self.dropout=nn.Dropout(p=drop_prob)
     self.ffn=FeedForward(d_model=d_model,ffn_hidden=ffn_hidden)
-  def forward(self,x):
+  def forward(self,x,self_attention_mask):
     _x=x
-    x=self.attention(x)
+    x=self.attention(x,mask=self_attention_mask)
     x=self.dropout(x)
     x=self.layer_norm1(x+_x)
     _x=x
@@ -209,10 +209,10 @@ class Encoder(nn.Module):
     self.END_TOKEN=END_TOKEN
     self.PADDING_TOKEN=PADDING_TOKEN
     self.sentence_embedding=SentenceEmbedding(d_model=d_model,max_len=max_len,language_to_index=language_to_index,START_TOKEN=START_TOKEN,END_TOKEN=END_TOKEN,PADDING_TOKEN=PADDING_TOKEN)
-    self.layers=SequentialEncoder(*[EncoderLayer(d_model=d_model,ffn_hidden=ffn_hidden,num_heads=num_heads) for _ in range(num_layers)])
-  def forward(self,x,self_attention_mask):
-    x=self.sentence_embedding(x)
-    x=self.layers(x)
+    self.layers=SequentialEncoder(*[EncoderLayer(d_model=d_model,ffn_hidden=ffn_hidden,num_heads=num_heads,max_len=max_len) for _ in range(num_layers)])
+  def forward(self,x,self_attention_mask,start_token,end_token):
+    x=self.sentence_embedding(x,start_token,end_token)
+    x=self.layers(x,self_attention_mask)
     return x
 print("Encoder defined successfully!")
 
@@ -224,7 +224,7 @@ class DecoderLayer(nn.Module):
     self.d_model=d_model
     self.max_len=max_len
     self.num_heads=num_heads
-    self.attention=MultiHeadAttention(num_heads=num_heads,d_model=d_model)
+    self.attention=MultiHeadAttention(num_heads=num_heads,d_model=d_model,max_len=max_len)
     self.dropout1=nn.Dropout(p=0.1)
     self.dropout2=nn.Dropout(p=0.1)
     self.dropout3=nn.Dropout(p=0.1)
@@ -276,9 +276,9 @@ class Transformer(nn.Module):
     self.encoder=Encoder(d_model,max_len,english_to_index,ffn_hidden,num_heads,num_layers,START_TOKEN,END_TOKEN,PADDING_TOKEN)
     self.decoder=Decoder(d_model,max_len,ffn_hidden,num_heads,num_layers,bengali_to_index,START_TOKEN,END_TOKEN,PADDING_TOKEN)
     self.linear=nn.Linear(d_model,bn_vocab_size)
-  def forward(self,x,y,encoder_self_attention_mask=None,decoder_self_attention_mask=None,decoder_cross_attention_mask=None):
-    x=self.encoder(x,encoder_self_attention_mask)
-    y=self.decoder(x,y,decoder_self_attention_mask,decoder_cross_attention_mask)
+  def forward(self,x,y,encoder_self_attention_mask=None,decoder_self_attention_mask=None,decoder_cross_attention_mask=None,start_token=True,end_token=True):
+    x=self.encoder(x,encoder_self_attention_mask,start_token,end_token)
+    y=self.decoder(x,y,decoder_self_attention_mask,decoder_cross_attention_mask,start_token,end_token)
     y=self.linear(y)
     return y
 print("Transformer defined successfully!")
